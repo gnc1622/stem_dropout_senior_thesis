@@ -36,6 +36,7 @@ library("RColorBrewer")
 # library(survMisc)
 # library(survcomp)
 
+
 #This helps to set the colors for graphs later, is built to be red-green colorblind friendly.
 cb_palette <- c(
   "#E69F00",  # orange
@@ -374,7 +375,7 @@ ggplot(sobreviver_comp_gmx_stats[which(sobreviver_comp_gmx_stats$variable %in% c
     y = NULL,
     title = "Hazard Ratio, Continuous Variables, Total_Credits > 120",
     subtitle = "Analysis limited to participants with at least 120 Credits"
-  ) + #The commented code below just adds HRs, but since these are a mix of significant and insignificant variables, I don't curretly have them loaded
+  ) + #The commented code below just adds HRs, but since these are a mix of significant and insignificant variables, I don't currently have them loaded
   # geom_text(
   #   aes(label = paste0("HR = ", round(hazard_ratio, 4)," | p = ", formatC(hr_pval, format = "g", digits = 5))),
   #   hjust = 1.8,
@@ -876,37 +877,258 @@ ggplot(sig_plot_HR_01[eigth7_n:full_n,], aes(x = cox_hr, y = sig_plot_HR_01$inte
 
 # Summative Modeling ------------------------------------------
 
+#Here's a list of variables to select from:
+{
+  # "term_GPA"                     "final_GPA"
+  # "delta_GPA_sum"                "delta_GPA_median"            
+  # "delta_GPA_sd"                 "Current_average_mean"        
+  # "Current_average_sd"           "Goal_grade_mean"             
+  # "Goal_grade_sd"                "grade_100_mean"              
+  # "grade_100_sd"                 "grade_minus_goal_mean"       
+  # "grade_minus_goal_sd"          "grade_minus_need_mean"       
+  # "grade_minus_need_sd"          "need_grade_mean"             
+  # "need_grade_sd"                               
+  # "PA_dense_sd"                  "PE_mean"                     
+  # "PE_sd"                        "pred_100_mean"               
+  # "pred_100_sd"                  "Prediction_confidence_mean"  
+  # "Prediction_confidence_sd"     
+}
+
 cox_model <- coxph(Surv(time = sobreviver_comp$semester_drop, event = sobreviver_comp$tier1_STEM_drop_tozero) ~ grade_minus_goal_mean +
                      grade_minus_goal_sd + Goal_grade_sd + Goal_grade_mean + PE_mean + PE_sd + delta_GPA_sum + delta_GPA_sd +
-                     pred_100_sd + Prediction_confidence_mean + Prediction_confidence_sd + term_GPA + final_GPA
-                   #pred_100_mean#grade_100_mean  ##grade_minus_need_mean#
-                   , data = sobreviver_comp_TPAB)
+                     pred_100_sd + Prediction_confidence_mean + Prediction_confidence_sd + term_GPA + final_GPA,
+                   data = sobreviver_comp_TPAB)
+
 cox_model <- coxph(Surv(time = sobreviver_comp$semester_drop, event = sobreviver_comp$tier1_STEM_drop_tozero) ~ grade_minus_goal_mean +
-                     PE_mean + grade_100_mean#grade_minus_goal_sd + Goal_grade_sd + Goal_grade_mean +  + PE_sd + delta_GPA_sum + delta_GPA_sd +
-                   #pred_100_sd + Prediction_confidence_mean + Prediction_confidence_sd + term_GPA + final_GPA
-                   #pred_100_mean#grade_100_mean  ##grade_minus_need_mean#
-                   , data = sobreviver_comp_TPAB)
+                     PE_mean + grade_100_mean, data = sobreviver_comp_TPAB)
+
 summary_model <- summary(cox_model)
 summary_model
 
 #grade_minus_need_mean, grade_100_mean (alone) both "remove" significance of grade_minus_goal_mean. Likely due to covariability.
 #pred_100_mean also kills signal, but only when added above the others.
 
-{
-# "term_GPA"                     "final_GPA"
-# "delta_GPA_sum"                "delta_GPA_median"            
-# "delta_GPA_sd"                 "Current_average_mean"        
-# "Current_average_sd"           "Goal_grade_mean"             
-# "Goal_grade_sd"                "grade_100_mean"              
-# "grade_100_sd"                 "grade_minus_goal_mean"       
-# "grade_minus_goal_sd"          "grade_minus_need_mean"       
-# "grade_minus_need_sd"          "need_grade_mean"             
-# "need_grade_sd"                               
-# "PA_dense_sd"                  "PE_mean"                     
-# "PE_sd"                        "pred_100_mean"               
-# "pred_100_sd"                  "Prediction_confidence_mean"  
-# "Prediction_confidence_sd"     
-} #Just a list to copy and paste from
+# Alphas Survival Analysis ------------------------------------------------
+
+#### Pre-Processing ####
+
+## Individual Learning Rates Set-Up ##
+
+#Make sure to have run this AFTER calculating the alphas in the "Pubq_code.py" script
+sobreviver_alpha <- read.csv("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/XY_sobreviver_alpha.csv", stringsAsFactors = FALSE, na.strings = "NA")
+
+#I think the line that filters out blank values for alpha_PE may remove those with < 120 credits implicitly, but I just want to be absolutely certain
+sobreviver_alpha <- sobreviver_alpha[which(sobreviver_alpha$final_tt_credits >= 120),] 
+sobreviver_alpha <- sobreviver_alpha[which(!is.na(sobreviver_alpha$alpha_PE)),]
+
+#The following is for the purpose of running an LM later
+sobreviver_alpha$final_major_t1_STEM.f <- as.factor(sobreviver_alpha$final_major_t1_STEM)
+sobreviver_alpha$tier1_STEM_drop_tozero.f <- as.factor(sobreviver_alpha$tier1_STEM_drop_tozero)
+
+## Global Learning Rates Set-Up ##
+
+#This will look a lot like the previous set-up section so I may omit some of the notes that were written since they are the same as those above
+sobreviver_alpha_II <- read.csv("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/XY_sobreviver_II_alpha.csv", stringsAsFactors = FALSE, na.strings = "NA")
+sobreviver_alpha_II <- sobreviver_alpha_II[which(sobreviver_alpha_II$final_tt_credits >= 120),] 
+sobreviver_alpha_II <- sobreviver_alpha_II[which(!is.na(sobreviver_alpha_II$alpha_PE)),]
+
+# sobreviver_alpha_II$final_major_t1_STEM.f <- as.factor(sobreviver_alpha_II$final_major_t1_STEM)
+# sobreviver_alpha_II$tier1_STEM_drop_tozero.f <- as.factor(sobreviver_alpha_II$tier1_STEM_drop_tozero)
+
+sobreviver_alpha_II$PE_mc_sign <- c(NA) #this would say whether the person had more negative or positive PEs; we'll be using this to assign alpha_(+/-)
+sobreviver_alpha$alpha_sign <- c(NA)
+sobreviver_alpha$alpha_sign.b <- c(NA)
+
+for (i in sobreviver_alpha_II$ID) {
+  PEs <- c(NA, NA, NA) #only three because there is only three real points of relevant updating: 1->2, 2->3, and 3->4
+  PE_signs <- c(NA, NA, NA)
+  subdf <- sobreviver_alpha_II[sobreviver_alpha_II$ID == i,]
+  PEs <- c(subdf$PE_exam1, subdf$PE_exam2, subdf$PE_exam3)
+  PE_signs[which(PEs > 0)] <- 1
+  PE_signs[which(PEs < 0)] <- 0
+  #If mean > 0.5, then more are positive
+  #If mean < 0.5, then more are negative
+  #If mean = 0.5, then equally + and - #impossible in this case - update it's not impossible, PE = 0 IS possible leaving only two signed PEs
+  if (mean(PE_signs, na.rm = TRUE) > 0.5) {
+    sobreviver_alpha_II$PE_mc_sign[sobreviver_alpha_II$ID == i] <- 1
+  } else if (mean(PE_signs, na.rm = TRUE) == 0.5) {
+    sobreviver_alpha_II$PE_mc_sign[sobreviver_alpha_II$ID == i] <- 0
+  } else if (mean(PE_signs, na.rm = TRUE) < 0.5) {
+    sobreviver_alpha_II$PE_mc_sign[sobreviver_alpha_II$ID == i] <- -1
+  }
+  
+  if (sobreviver_alpha_II$PE_mc_sign[sobreviver_alpha_II$ID == i] == 1) {
+    sobreviver_alpha$alpha_sign[sobreviver_alpha$ID == i] <- -0.1961 #This is the alpha_pos from the Pubq_code.py script (8/25/25)
+    sobreviver_alpha$alpha_sign.b[sobreviver_alpha$ID == i] <- 1
+  } else if (sobreviver_alpha_II$PE_mc_sign[sobreviver_alpha_II$ID == i] == -1) {
+    sobreviver_alpha$alpha_sign[sobreviver_alpha$ID == i] <- 0.0232 #This is the alpha_neg from the Pubq_code.py script (8/25/25)
+    sobreviver_alpha$alpha_sign.b[sobreviver_alpha$ID == i] <- 0
+  } #We'll leave the 0 case as NA, don't want to mess up the model
+}
+
+#This will just tell you sample size for the global learning rates
+message("Original n = ", nrow(sobreviver_alpha), " | After removing cases where there are an equal number of + and - PEs, n = ", nrow(sobreviver_alpha[which(!is.na(sobreviver_alpha$alpha_sign)),]),
+        " | Therefore, we've only lost: ", nrow(sobreviver_alpha) - nrow(sobreviver_alpha[which(!is.na(sobreviver_alpha$alpha_sign)),]), " particiapnts.")
+
+#### Individual Learning Rates ####
+
+## Linear Model ##
+
+glimpse_PE <- glm(final_major_t1_STEM.f ~ alpha_PE, data = sobreviver_alpha, family = binomial(link = "logit"))
+summary(glimpse_PE)
+plot_model(glimpse_PE, type = "pred", terms = c("alpha_PE"))
+
+glimpse_GMG <- glm(final_major_t1_STEM.f ~ alpha_GMG, data = sobreviver_alpha, family = binomial(link = "logit"))
+summary(glimpse_GMG)
+plot_model(glimpse_GMG, type = "pred", terms = c("alpha_GMG"))
+
+## Survival ##
+
+## Alpha Based on PE
+cox_model_aPE <- coxph(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ alpha_PE, data = sobreviver_alpha,  x = TRUE)
+summary(cox_model_aPE)
+summary_obj <- summary(cox_model_aPE)
+p_val <- summary_obj$coefficients[, "Pr(>|z|)"]
+HR <- summary_obj$coefficients[, "exp(coef)"]
+
+#Interactive 3D surface
+plot_obj <-  plot_surv_3Dsurface(time = "semester_drop",
+                                 status = "tier1_STEM_drop_tozero",
+                                 variable = "alpha_PE",
+                                 data = sobreviver_alpha,
+                                 model = cox_model_aPE, #title = "Survival Probability x t x PA_dense_mean",
+                                 interactive=TRUE,#, subtitle = paste("Cox Model p =", format.pval(p_val, digits = 3))
+                                 max_t = 10,
+                                 zlab = "alpha_PE",
+                                 xlab = "Time (Semesters)",
+                                 ylab = 'Probability of STEM Persistence')
+
+plot_obj <- plot_obj |> layout(
+  title = list(
+    text = paste0(
+      "STEM Persistence Probability over Time as a Function of alpha_PE", #(Mean Negative Affect during Dense Sampling Period)
+      "<br><sub>",
+      "Cox Model p = ", formatC(p_val, format = "f", digits = 10),
+      " | Cox HR = ", sprintf("%.5f", HR),
+      "</sub>"
+    ),
+    x = 0.5,
+    y= 0.9,
+    xanchor = "center"
+  )
+)
+
+plot_obj
+
+## Alpha Based on GMG
+cox_model_GMG <- coxph(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ alpha_GMG, data = sobreviver_alpha,  x = TRUE)
+summary(cox_model_GMG)
+summary_obj <- summary(cox_model_GMG)
+p_val <- summary_obj$coefficients[, "Pr(>|z|)"]
+HR <- summary_obj$coefficients[, "exp(coef)"]
+
+#Interactive 3D surface
+plot_obj <-  plot_surv_3Dsurface(time = "semester_drop",
+                                 status = "tier1_STEM_drop_tozero",
+                                 variable = "alpha_GMG",
+                                 data = sobreviver_alpha,
+                                 model = cox_model_GMG, #title = "Survival Probability x t x PA_dense_mean",
+                                 interactive=TRUE,#, subtitle = paste("Cox Model p =", format.pval(p_val, digits = 3))
+                                 max_t = 10,
+                                 zlab = "alpha_GMG",
+                                 xlab = "Time (Semesters)",
+                                 ylab = 'Probability of STEM Persistence')
+
+plot_obj <- plot_obj |> layout(
+  title = list(
+    text = paste0(
+      "STEM Persistence Probability over Time as a Function of alpha_GMG", #(Mean Negative Affect during Dense Sampling Period)
+      "<br><sub>",
+      "Cox Model p = ", formatC(p_val, format = "f", digits = 10),
+      " | Cox HR = ", sprintf("%.5f", HR),
+      "</sub>"
+    ),
+    x = 0.5,
+    y= 0.9,
+    xanchor = "center"
+  )
+)
+
+plot_obj
+
+#### Global Learning Rates ####
+
+cox_model_aPE <- coxph(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ alpha_sign.b, data = sobreviver_alpha,  x = TRUE)
+summary_obj <- summary(cox_model_aPE)
+summary(cox_model_aPE)
+p_val <- summary_obj$coefficients[, "Pr(>|z|)"]
+HR <- summary_obj$coefficients[, "exp(coef)"]
+
+cname <- "alpha_sign.b"
+
+#Collect the relevant stats
+sobreviver_stats <- expand.grid(
+  variable = cname,
+  level = 1
+) |>
+  mutate(
+    hazard_ratio = NA_real_,
+    ci_lower = NA_real_,
+    ci_upper = NA_real_,
+    hr_pval = NA_real_,
+    hr_power = NA_real_,
+    km_pval = NA_real_,
+    km_power = NA_real_,
+    n_events = NA_real_,
+    n_sample = NA_real_
+  )
+
+sobreviver_stats$hazard_ratio <- summary(cox_model_aPE)$coefficients[1, "exp(coef)"]
+sobreviver_stats$ci_lower <- summary(cox_model_aPE)$conf.int[1, "lower .95"]
+sobreviver_stats$ci_upper <- summary(cox_model_aPE)$conf.int[1, "upper .95"]
+sobreviver_stats$hr_pval <- summary(cox_model_aPE)$coefficients[1, "Pr(>|z|)"]
+sobreviver_stats$hr_power <- 1 - pchisq(qchisq(1 - 0.05, summary_obj$wald["df"]), summary_obj$wald["df"], ncp = summary_obj$wald["test"])
+sobreviver_stats$n_events <- sum(sobreviver_alpha$tier1_STEM_drop_tozero[which(sobreviver_alpha$alpha_sign.b ==1)], na.rm = TRUE)
+sobreviver_stats$n_sample <- length(sobreviver_alpha$tier1_STEM_drop_tozero[which(sobreviver_alpha$alpha_sign.b ==1)])
+#You could plot a single hazard ratio on a single tree forest plot, but there's no need, a simple report of the HR is sufficient
+
+# Kaplan-Meier fit & log-rank test
+km_fit <- survfit(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ alpha_sign.b, data = sobreviver_alpha)
+survdiff_test <- survdiff(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ alpha_sign.b, data = sobreviver_alpha)
+chisq <- survdiff_test$chisq
+df <- length(survdiff_test$n) - 1
+sobreviver_stats$km_pval <- 1 - pchisq(chisq, df)
+sobreviver_stats$km_power <- 1 - pchisq(qchisq(1 - 0.05, df), df, ncp = chisq)
+
+#Print Tables
+print(sobreviver_stats)
+summary(km_fit)$table
+
+#See if median exists (probably won't)
+meds <- summary(km_fit)$table[, "median"]
+has_median <- any(!is.na(meds))
+
+#Plot
+ggsurvplot(km_fit,
+           pval = TRUE,
+           conf.int = TRUE,
+           linetype = "strata",
+           surv.median.line = if (has_median) "hv" else NULL,
+           palette = c("#E7B800", "#2E9FDF"),
+           ggtheme = theme_bw(),
+           xlab = "Time (Semesters)", legend = "bottom", legend.title = "Alpha_Sign", legend.labs = c("alpha_neg (0) = 0.0232", "alpha_pos (1) = -0.1961"),
+           risk.table = TRUE, risk.table.y.text.col = TRUE, risk.table.col = "strata"#,
+           # xlim = c(0,10)
+)
+
+
+
+
+
+
+
+
+
 
 
 
