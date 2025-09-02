@@ -3,24 +3,38 @@
 """
 Created on Fri Jul 11 11:15:27 2025
 
-@author: axn821
+Last Edited: Tue Sep 2 2025
+
+@author: Anthony Navarro
+
+AI assistance was used for the purpose of streamlining, troubleshooting, or expediting the code writing process
+AI was not used for the generation of ideas, pipelines, or data.
 """
 #For ML
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import random
+from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
-from sklearn.model_selection import GroupShuffleSplit
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import (GroupShuffleSplit, StratifiedKFold)
 from sklearn.metrics import (roc_auc_score, accuracy_score, precision_score,
                              recall_score, f1_score, confusion_matrix, roc_curve)
-from scipy.stats import sem
+from scipy.stats import sem, norm
 from numpy import mean
 #from AN_Biblioteca import *
 
 def check_col(df):
+    """
+    Prints the percent missingness in every column
+
+    Parameters:
+    - df: dataset of interset
+
+    Returns:
+    - percent missingness in every column
+    """
     missing_cols = []  # List to store column names
     total_rows = len(df)  # Get total number of rows
     
@@ -39,6 +53,47 @@ from scipy.optimize import minimize
 from matplotlib.lines import Line2D
 import seaborn as sns
 import statsmodels.api as sm
+
+def conf_int(data, confidence= 0.95, return_range_only = True):
+    """
+    Calculate the confidence interval of the mean for a dataset.
+
+    Parameters:
+    - data: a set of values you wish to calculate the confidence interval for
+    - confidence: Confidence level as a decimal (e.g., 0.95 for 95%)
+    - return_range_only: If TRUE, return only the margin of error (half-width of the CI)
+
+    Returns:
+    - If return_range_only: float (margin of error)
+    - Else: tuple (margin of error, upper CI, lower CI)
+    """
+    m = np.mean(data, axis=0)
+    s = sem(data, axis=0)  # standard error of the mean (StD/(n^0.5))
+    z = norm.ppf(0.5 + confidence / 2)  # z-score
+
+    margin = z * s
+    upper = m + margin
+    lower = m - margin
+
+    if return_range_only: #set to true by default for the purposes of this project
+        return margin 
+    else:
+        return margin, upper, lower
+    
+def per_gain(final, initial, percent = False):
+    """
+    Calculate the percent change, used for gain in this script
+    
+    Parameters:
+    - Final = Point to be compared
+    - Initial = Comparsion Point
+    - Percent = Whether you want to receive the value as a percent (0-100) or as a decimal (0-1)
+    """
+    pc = (final - initial)/initial
+    if (percent == False): #Set to false for the purposes of this project
+        return pc
+    else:
+        return pc*100
 
 #%% Data Set-Up
 sobreviver = pd.read_csv("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/XY_sobreviver.csv")
@@ -66,6 +121,375 @@ X = X.drop(columns=["final_major_t1_STEM"]) # Keep ID for now
 
 y = XandY.copy()
 y = XandY["final_major_t1_STEM"]
+#%% Simple Logistic Regresion Using only Demograhic Data
+
+#Plots for this aren't vital, reporting these statistic will suffice. For calulating gain, we can just do (AUC_RFC - AUC_LR)/(AUC_LR)
+
+Demograph = ["gender_F","race_MLT","race_CWH","race_AFB","race_AAA","race_NAT","race_HPI","race_OTH","ethnicity_HS"]
+
+X = XandY.copy()
+X = X[Demograph]
+
+y = XandY.copy()
+y = XandY["final_major_t1_STEM"]
+
+# Configuration
+n_splits = 5
+n_repeats = 100
+
+# Storage
+roc_curves = []
+auc_scores = []
+accuracies = []
+precisions = []
+recalls = []
+sensitivities = []
+specificities = []
+f1_scores = []
+conf_matrices = []
+feature_rows_perm = []
+
+
+# Coefficient storage to summarize later (per feature)
+feature_names = list(X.columns)
+coef_history = {f: [] for f in feature_names}
+intercept_history = []
+
+# --- CV Loop ---
+for seed in range(n_repeats):
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    for train_idx, test_idx in skf.split(X, y):
+        X_train = X.iloc[train_idx]
+        X_test  = X.iloc[test_idx]
+        y_train = y.iloc[train_idx]
+        y_test  = y.iloc[test_idx]
+
+        logit = LogisticRegression(
+            penalty="l2",
+            solver="liblinear",
+            max_iter=1000,
+            class_weight=None,
+            random_state=seed
+        )
+        logit.fit(X_train, y_train)
+
+        # Predictions
+        y_pred = logit.predict(X_test)
+        y_proba = logit.predict_proba(X_test)[:, 1]
+
+        # Metrics
+        accuracies.append(accuracy_score(y_test, y_pred))
+        auc_scores.append(roc_auc_score(y_test, y_proba))
+        precisions.append(precision_score(y_test, y_pred, zero_division=0))
+        recalls.append(recall_score(y_test, y_pred, zero_division=0))
+        f1_scores.append(f1_score(y_test, y_pred, zero_division=0))
+
+        tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+        sensitivities.append(tp / (tp + fn) if (tp + fn) else np.nan)  # recall
+        specificities.append(tn / (tn + fp) if (tn + fp) else np.nan)
+        conf_matrices.append(np.array([[tn, fp], [fn, tp]]))
+
+        # ROC curve
+        fpr, tpr, _ = roc_curve(y_test, y_proba)
+        roc_curves.append((fpr, tpr))
+
+        # Coefficients
+        coefs = pd.Series(logit.coef_.ravel(), index=feature_names)
+        for f in feature_names:
+            coef_history[f].append(coefs[f])
+        intercept_history.append(float(logit.intercept_[0]))
+
+# --- Aggregate metrics ---
+metric_summary_LR = {
+    "Accuracy": (mean(accuracies), conf_int(accuracies)),
+    "ROC AUC": (mean(auc_scores), conf_int(auc_scores)),
+    "Precision": (mean(precisions), conf_int(precisions)),
+    "Recall (Sensitivity)": (mean(recalls), conf_int(recalls)),
+    "Specificity": (mean(specificities), conf_int(specificities)),
+    "F1 Score": (mean(f1_scores), conf_int(f1_scores))
+}
+
+# Mean confusion matrix and CI 
+mean_conf_matrix = np.mean(conf_matrices, axis=0)
+conf_matrix_ci = conf_int(conf_matrices)
+
+# --- Coefficient & Odds Ratio summaries with CIs ---
+coef_summary_rows = []
+for f in feature_names:
+    vals = coef_history[f]
+    # coefficient CI
+    margin, upper, lower = conf_int(vals, return_range_only=False)
+    mean_coef = mean(vals)
+    # odds ratio CI
+    or_mean  = float(np.exp(mean_coef))
+    or_lower = float(np.exp(lower))
+    or_upper = float(np.exp(upper))
+    coef_summary_rows.append({
+        "feature": f,
+        "coef_mean": mean_coef,
+        "coef_CI_lower": lower,
+        "coef_CI_upper": upper,
+        "OR_mean": or_mean,
+        "OR_CI_lower": or_lower,
+        "OR_CI_upper": or_upper
+    })
+coef_summary = pd.DataFrame(coef_summary_rows).set_index("feature").sort_values("OR_mean", ascending=False)
+
+# Outputs
+print("Logistic Regression Metric Summary (mean, CI):")
+for k, (m, ci) in metric_summary_LR.items():
+    print(f"{k:>18}: {m:.3f} ({m-ci:.3f}, {m+ci:.3f})")
+
+print("\nMean Confusion Matrix over folds/runs:")
+print(mean_conf_matrix.round(2), "\n\n(LCI:\n", mean_conf_matrix.round(2) - conf_matrix_ci.round(2), "\n,\nUCI:\n", mean_conf_matrix.round(2) + conf_matrix_ci.round(2) ,")")
+
+print("\nCoefficient / Odds Ratio summary:")
+with pd.option_context('display.max_columns', None):
+    print(coef_summary)
+
+
+#%% Pre-Pruning Base Model
+
+X = XandY.copy()
+X = X.drop(columns=["final_major_t1_STEM"]) # Keep ID for now
+
+y = XandY.copy()
+y = XandY["final_major_t1_STEM"]
+
+# Configuration
+n_splits = 5
+n_repeats = 100
+
+# Storage
+roc_curves = []
+auc_scores = []
+accuracies = []
+precisions = []
+recalls = []
+sensitivities = []
+specificities = []
+f1_scores = []
+conf_matrices = []
+feature_rows = []
+
+for seed in range(n_repeats):
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    
+    for train_idx, test_idx in skf.split(X, y):
+        X_train = X.iloc[train_idx]
+        X_test = X.iloc[test_idx]
+        y_train = y.iloc[train_idx]
+        y_test = y.iloc[test_idx]
+
+        feature_names = list(X_train.columns)
+
+        model = RandomForestClassifier()
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test)[:, 1]
+
+        # Metrics
+        accuracies.append(accuracy_score(y_test, y_pred))
+        auc_scores.append(roc_auc_score(y_test, y_proba))
+        precisions.append(precision_score(y_test, y_pred))
+        recalls.append(recall_score(y_test, y_pred))
+        f1_scores.append(f1_score(y_test, y_pred))
+        conf_matrices.append(confusion_matrix(y_test, y_pred))
+        
+        # Sensitivity and Specificity
+        tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+        sensitivities.append(tp / (tp + fn))
+        specificities.append(tn / (tn + fp))
+        
+        conf_matrices.append(np.array([[tn, fp], [fn, tp]]))
+        
+        # ROC curve
+        fpr, tpr, _ = roc_curve(y_test, y_proba)
+        roc_curves.append((fpr, tpr))
+
+        # Feature importances
+        result = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=seed, n_jobs=-1)
+        importances = pd.Series(result.importances_mean, index=feature_names)
+        stds = pd.Series(result.importances_std, index=feature_names)
+
+        importance_row = {
+            col: imp if (imp - std > 0 or imp + std < 0) else np.nan
+            for col, imp, std in zip(feature_names, importances, stds)
+        }
+        feature_rows.append(importance_row)
+
+# Aggregate metrics
+metric_summary_ppRFC = {
+    "Accuracy": (mean(accuracies), conf_int(accuracies)),
+    "ROC AUC": (mean(auc_scores), conf_int(auc_scores)),
+    "Precision": (mean(precisions), conf_int(precisions)),
+    "Recall (Sensitivity)": (mean(recalls), conf_int(recalls)),
+    "Specificity": (mean(specificities), conf_int(specificities)),
+    "F1 Score": (mean(f1_scores), conf_int(f1_scores))
+}
+
+# Mean confusion matrix
+mean_conf_matrix = np.mean(conf_matrices, axis=0)
+conf_matrix_ci = conf_int(conf_matrices)
+
+#%% Pre-Pruning Plots
+
+### Plot ROC AUC ###
+
+# Common FPR grid for interpolation
+mean_fpr = np.linspace(0, 1, 100)
+interp_tprs = []
+
+# Interpolate all TPRs onto mean FPR grid
+for fpr, tpr in roc_curves:
+    interp_tpr = np.interp(mean_fpr, fpr, tpr)
+    interp_tpr[0] = 0.0
+    interp_tprs.append(interp_tpr)
+
+# Convert to numpy array
+interp_tprs = np.array(interp_tprs)
+
+# Compute mean and 95CI
+mean_tpr = np.mean(interp_tprs, axis=0)
+CI_tpr = conf_int(accuracies)#(interp_tprs, axis=0)
+mean_tpr[-1] = 1.0
+
+# Upper and lower bounds
+tpr_upper = np.minimum(mean_tpr + CI_tpr, 1)
+tpr_lower = np.maximum(mean_tpr - CI_tpr, 0)
+
+# Mean AUC
+mean_auc = np.mean(auc_scores)
+
+# All ROC curves
+print(f"Number of individual ROC curves plotted: {len(roc_curves)}")
+
+mean_auc = np.mean(auc_scores)
+CI_auc = conf_int(auc_scores)
+lower_auc = mean_auc - CI_auc
+upper_auc = mean_auc + CI_auc
+
+auc_label = f"Mean ROC (AUC = {mean_auc:.3f} [{lower_auc:.3f}, {upper_auc:.3f}])"
+
+for fpr, tpr in roc_curves:
+    plt.plot(fpr, tpr, alpha=0.1, color='gray')
+
+# Mean curve
+plt.plot(mean_fpr, mean_tpr, color='blue', label=auc_label, linewidth=2)
+
+# 95CI band
+plt.fill_between(mean_fpr, tpr_lower, tpr_upper, color='blue', alpha=.8, label="95% Confidence Interval")
+
+plt.plot([0, 1], [0, 1], linestyle='--', color='black', linewidth=1)
+
+# Labels and layout
+plt.title("Mean ROC Curve For RFC run on Pre-Pruned Data ± 95% CI", fontsize=14)
+plt.xlabel("False Positive Rate", fontsize=12)
+plt.ylabel("True Positive Rate", fontsize=12)
+plt.xticks(fontsize=10)
+plt.yticks(fontsize=10)
+plt.legend(loc="lower right", fontsize=10)
+plt.grid(True, linestyle='--', linewidth=0.5)
+plt.tight_layout()
+
+plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/100roc_curve_pprune.svg", format='svg')  # Save in vector format
+plt.show()
+
+# Create labels for mean ± 95CI
+labels = np.empty_like(mean_conf_matrix, dtype=object)
+for i in range(2):
+    for j in range(2):
+        mean_val = mean_conf_matrix[i, j]
+        ci_val = conf_matrix_ci[i, j]
+        labels[i, j] = f"{mean_val:.1f}\n({mean_val-ci_val:.1f}, {mean_val+ci_val:.1f})"
+
+fig, ax = plt.subplots(figsize=(6, 5))
+# Coordinates for pcolormesh (requires edges, so +1 shape)
+x = np.arange(3)
+y = np.arange(3)
+
+# Plot confusion matrix as vector-based pcolormesh
+c = ax.pcolormesh(x, y, mean_conf_matrix, cmap='Blues', shading='auto')
+
+# Add colorbar
+fig.colorbar(c, ax=ax)
+
+# Add text annotations
+for i in range(2):
+    for j in range(2):
+        ax.text(j + 0.5, i + 0.5, labels[i, j], ha='center', va='center', color='black', fontsize=12)
+
+# Axes settings
+ax.set_xticks([0.5, 1.5])
+ax.set_yticks([0.5, 1.5])
+ax.set_xticklabels(['NOT STEM Major', 'STEM Major'])
+ax.set_yticklabels(['NOT STEM Major', 'STEM Major'], rotation=90)
+
+ax.set_xlabel("Predicted Label")
+ax.set_ylabel("True Label")
+ax.set_title("Mean Confusion Matrix ± 95% CI (100×5 RFC, Pre-Pruning)", fontsize=14)
+
+# Clean look: turn off spines and grid
+ax.grid(False)
+# for spine in ax.spines.values():
+#     spine.set_visible(False)
+
+plt.tight_layout()
+
+# Save as SVG (should have no PNGs)
+plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/mean_confusion_matrix_pprune.svg", format='svg')
+
+plt.show()
+
+print("=== Model Performance Metrics (mean ± 95 CI) ===")
+for metric, (m, CI) in metric_summary_ppRFC.items():
+    lci = m - CI
+    uci = m + CI
+    print(f"{metric}: {m:.3f} ({lci:.3f}, {uci:.3f})")
+    
+### Plot Feature Importances ###
+
+importance_df = pd.DataFrame(feature_rows)
+
+mean_importance = importance_df.mean(skipna=True)
+std_importance = importance_df.std(skipna=True)
+
+# Sort by importance
+mean_importance = mean_importance.sort_values(ascending=False)
+std_importance = std_importance[mean_importance.index]
+
+
+# Set up figure and axis
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# Bar plot with error bars
+mean_importance.plot.bar(
+    yerr=std_importance,
+    capsize=4,
+    color='steelblue',
+    edgecolor='black',
+    ax=ax
+)
+# Labels and title
+ax.set_title("Mean Feature Importance of Pre-Pruned Feature Set", fontsize=14)
+ax.set_ylabel("Mean Permutation Importance", fontsize=12)
+ax.set_xticklabels(mean_importance.index, rotation=45, ha='right', fontsize=10)
+ax.tick_params(axis='y', labelsize=10)
+
+# Grid behind bars
+ax.set_axisbelow(True)
+ax.grid(axis='y', linestyle='--', linewidth=0.5)
+
+# Emphasize y=0 line
+ax.axhline(0, color='black', linewidth=1.2)
+
+# Layout and save
+plt.tight_layout()
+plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/feature_importance_pprune.svg", format='svg')
+plt.show()
+
+
 #%% Pruning [Don't run if you don't absolutely have to, takes at least 2 hours]
 
 
@@ -182,7 +606,7 @@ print(f"Final mean AUC: {roc_auc_history[-1]:.4f}")
 
 # --- CONVERT TO DATAFRAME ---
 pruning_df = pd.DataFrame(pruning_stats)
-#%% Run Base Model
+#%% Run Base Model (Post-Pruning)
 
 #now take the remaining features and run 100 models using only those 10
 current_features = ['extraversion', 'open_mindedness', 'term_GPA', 'UM_credits_at_study', 'semester_study', 'Goal_grade_sd', 'grade_100_mean', 'grade_minus_goal_mean', 'NA_dense_mean', 'pred_100_mean']
@@ -260,24 +684,21 @@ for seed in range(n_repeats):
         feature_rows.append(importance_row)
 
 # Aggregate metrics
-metric_summary = {
-    "Accuracy": (mean(accuracies), sem(accuracies)),
-    "ROC AUC": (mean(auc_scores), sem(auc_scores)),
-    "Precision": (mean(precisions), sem(precisions)),
-    "Recall (Sensitivity)": (mean(recalls), sem(recalls)),
-    "Specificity": (mean(specificities), sem(specificities)),
-    "F1 Score": (mean(f1_scores), sem(f1_scores))
+metric_summary_pRFC = {
+    "Accuracy": (mean(accuracies), conf_int(accuracies)),
+    "ROC AUC": (mean(auc_scores), conf_int(auc_scores)),
+    "Precision": (mean(precisions), conf_int(precisions)),
+    "Recall (Sensitivity)": (mean(recalls), conf_int(recalls)),
+    "Specificity": (mean(specificities), conf_int(specificities)),
+    "F1 Score": (mean(f1_scores), conf_int(f1_scores))
 }
 
 # Mean confusion matrix
 mean_conf_matrix = np.mean(conf_matrices, axis=0)
-conf_matrix_ci = sem(conf_matrices, axis=0)
-
-#%% Plot Figures
+conf_matrix_ci = conf_int(conf_matrices)
+#%% Plot Figures (Post-Pruning)
 
 ### Plot ROC AUC ###
-
-#These are the variables from the auto-pruning run on 7/11/2025 and recorded on 7/14/2025
 
 # Common FPR grid for interpolation
 mean_fpr = np.linspace(0, 1, 100)
@@ -292,14 +713,14 @@ for fpr, tpr in roc_curves:
 # Convert to numpy array
 interp_tprs = np.array(interp_tprs)
 
-# Compute mean and std
+# Compute mean and 95CI
 mean_tpr = np.mean(interp_tprs, axis=0)
-std_tpr = np.std(interp_tprs, axis=0)
+CI_tpr = conf_int(accuracies)#(interp_tprs, axis=0)
 mean_tpr[-1] = 1.0
 
 # Upper and lower bounds
-tpr_upper = np.minimum(mean_tpr + std_tpr, 1)
-tpr_lower = np.maximum(mean_tpr - std_tpr, 0)
+tpr_upper = np.minimum(mean_tpr + CI_tpr, 1)
+tpr_lower = np.maximum(mean_tpr - CI_tpr, 0)
 
 # Mean AUC
 mean_auc = np.mean(auc_scores)
@@ -308,9 +729,9 @@ mean_auc = np.mean(auc_scores)
 print(f"Number of individual ROC curves plotted: {len(roc_curves)}")
 
 mean_auc = np.mean(auc_scores)
-se_auc = sem(auc_scores)
-lower_auc = mean_auc - se_auc
-upper_auc = mean_auc + se_auc
+CI_auc = conf_int(auc_scores)
+lower_auc = mean_auc - CI_auc
+upper_auc = mean_auc + CI_auc
 
 auc_label = f"Mean ROC (AUC = {mean_auc:.3f} [{lower_auc:.3f}, {upper_auc:.3f}])"
 
@@ -320,13 +741,13 @@ for fpr, tpr in roc_curves:
 # Mean curve
 plt.plot(mean_fpr, mean_tpr, color='blue', label=auc_label, linewidth=2)
 
-# Std deviation band
-plt.fill_between(mean_fpr, tpr_lower, tpr_upper, color='blue', alpha=.8, label="±1 Std. Dev.")
+# 95CI band
+plt.fill_between(mean_fpr, tpr_lower, tpr_upper, color='blue', alpha=.8, label="95% Confidence Interval")
 
 plt.plot([0, 1], [0, 1], linestyle='--', color='black', linewidth=1)
 
 # Labels and layout
-plt.title("Mean ROC Curve For RFC run on Pruned Data", fontsize=14)
+plt.title("Mean ROC Curve For RFC run on Pruned Data ± 95% CI", fontsize=14)
 plt.xlabel("False Positive Rate", fontsize=12)
 plt.ylabel("True Positive Rate", fontsize=12)
 plt.xticks(fontsize=10)
@@ -335,19 +756,19 @@ plt.legend(loc="lower right", fontsize=10)
 plt.grid(True, linestyle='--', linewidth=0.5)
 plt.tight_layout()
 
-plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/100roc_curve.svg", format='svg')  # Save in vector format
+plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/100roc_curve_CI.svg", format='svg')  # Save in vector format
 plt.show()
 
-#%% Plot Confusion Matrix + Print Model Performance
+### Plot Confusion Matrix + Print Model Performance ###
 
 
-# Create labels for mean ± SEM
+# Create labels for mean ± 95CI
 labels = np.empty_like(mean_conf_matrix, dtype=object)
 for i in range(2):
     for j in range(2):
         mean_val = mean_conf_matrix[i, j]
         ci_val = conf_matrix_ci[i, j]
-        labels[i, j] = f"{mean_val:.1f}\n±{ci_val:.1f}"
+        labels[i, j] = f"{mean_val:.1f}\n({mean_val-ci_val:.1f}, {mean_val+ci_val:.1f})"
 
 fig, ax = plt.subplots(figsize=(6, 5))
 # Coordinates for pcolormesh (requires edges, so +1 shape)
@@ -373,7 +794,7 @@ ax.set_yticklabels(['NOT STEM Major', 'STEM Major'], rotation=90)
 
 ax.set_xlabel("Predicted Label")
 ax.set_ylabel("True Label")
-ax.set_title("Mean Confusion Matrix ± SEM (100×5 RFC)", fontsize=14)
+ax.set_title("Mean Confusion Matrix ± 95% CI (100×5 RFC, Pre-Pruning)", fontsize=14)
 
 # Clean look: turn off spines and grid
 ax.grid(False)
@@ -382,18 +803,18 @@ ax.grid(False)
 
 plt.tight_layout()
 
-# Save as SVG (fully vectorized, no embedded PNGs)
-plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/mean_confusion_matrix.svg", format='svg')
+# Save as SVG (should have no PNGs)
+plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/mean_confusion_matrix_CI.svg", format='svg')
 
 plt.show()
 
-print("=== Model Performance Metrics (mean ± SEM CI) ===")
-for metric, (m, s) in metric_summary.items():
-    lci = m - s
-    uci = m + s
+print("=== Model Performance Metrics (mean ± 95 CI) ===")
+for metric, (m, CI) in metric_summary_pRFC.items():
+    lci = m - CI
+    uci = m + CI
     print(f"{metric}: {m:.3f} ({lci:.3f}, {uci:.3f})")
     
-#%% Plot Feature Importances
+### Plot Feature Importances ###
 
 importance_df = pd.DataFrame(feature_rows)
 
@@ -416,10 +837,9 @@ mean_importance.plot.bar(
     edgecolor='black',
     ax=ax
 )
-
 # Labels and title
-ax.set_title("Mean Feature Importance ± SD (100×5 RFCs on Pruned Features)", fontsize=14)
-ax.set_ylabel("Permutation Importance", fontsize=12)
+ax.set_title("Mean Feature Importance of Pruned Feature Set", fontsize=14)
+ax.set_ylabel("Mean Permutation Importance", fontsize=12)
 ax.set_xticklabels(mean_importance.index, rotation=45, ha='right', fontsize=10)
 ax.tick_params(axis='y', labelsize=10)
 
@@ -432,8 +852,23 @@ ax.axhline(0, color='black', linewidth=1.2)
 
 # Layout and save
 plt.tight_layout()
-plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/feature_importance.svg", format='svg')
+plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/feature_importance_CI.svg", format='svg')
 plt.show()
+
+#%% Calculate and Print Gain
+
+print("\nRelative to the LR model, the Unpruned RFC had an improved ROC_AUC of",
+      per_gain(metric_summary_ppRFC["ROC AUC"][0], metric_summary_LR["ROC AUC"][0]), "and an improved accuracy of",
+      per_gain(metric_summary_ppRFC["Accuracy"][0], metric_summary_LR["Accuracy"][0]))
+
+print("\nRelative to the LR model, the Pruned RFC had an improved ROC_AUC of",
+      per_gain(metric_summary_pRFC["ROC AUC"][0], metric_summary_LR["ROC AUC"][0]), "and an improved accuracy of",
+      per_gain(metric_summary_pRFC["Accuracy"][0], metric_summary_LR["Accuracy"][0]))
+
+print("\nRelative to the Unpruned RFC, the Pruned RFC had an improved ROC_AUC of",
+      per_gain(metric_summary_pRFC["ROC AUC"][0], metric_summary_ppRFC["ROC AUC"][0]), "and an improved accuracy of",
+      per_gain(metric_summary_pRFC["Accuracy"][0], metric_summary_ppRFC["Accuracy"][0]))
+
 
 #%%Reinforcement Learning -----------------------------------------------------
 #%% Pre-process
