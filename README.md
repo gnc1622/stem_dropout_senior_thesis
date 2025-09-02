@@ -3,6 +3,8 @@ STEM Dropout Code availability
 
 In here will be all files related to |WRITE UP NAME|. A portion of the work was done in R and a portion was done in Python:
 
+Edits are made to figures in illustrator. The purpose of these edits is to make sure that axes are legible and accessible to all.
+
 Python:
   Machine Learning
   Reinforcment Learning
