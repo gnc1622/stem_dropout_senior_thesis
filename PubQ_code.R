@@ -28,15 +28,6 @@ library("lme4")
 library("tibble")
 library("RColorBrewer")
 
-# library(AN.Biblioteca.R)
-# library(colorblindr)
-# library(pammtools)
-# library(riskRegression)
-# library(contsurvplot)
-# library(survMisc)
-# library(survcomp)
-
-
 #This helps to set the colors for graphs later, is built to be red-green colorblind friendly.
 cb_palette <- c(
   "#E69F00",  # orange

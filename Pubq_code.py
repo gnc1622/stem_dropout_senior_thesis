@@ -123,7 +123,7 @@ y = XandY.copy()
 y = XandY["final_major_t1_STEM"]
 #%% Simple Logistic Regresion Using only Demograhic Data
 
-#Plots for this aren't vital, reporting these statistic will suffice. For calulating gain, we can just do (AUC_RFC - AUC_LR)/(AUC_LR)
+#For calulating gain, we can just do (AUC_RFC - AUC_LR)/(AUC_LR)
 
 Demograph = ["gender_F","race_MLT","race_CWH","race_AFB","race_AAA","race_NAT","race_HPI","race_OTH","ethnicity_HS"]
 
@@ -236,22 +236,109 @@ for f in feature_names:
 coef_summary = pd.DataFrame(coef_summary_rows).set_index("feature").sort_values("OR_mean", ascending=False)
 
 # Outputs
-print("Logistic Regression Metric Summary (mean, CI):")
+# print("Logistic Regression Metric Summary (mean, CI):")
 for k, (m, ci) in metric_summary_LR.items():
     print(f"{k:>18}: {m:.3f} ({m-ci:.3f}, {m+ci:.3f})")
-
-print("\nMean Confusion Matrix over folds/runs:")
-print(mean_conf_matrix.round(2), "\n\n(LCI:\n", mean_conf_matrix.round(2) - conf_matrix_ci.round(2), "\n,\nUCI:\n", mean_conf_matrix.round(2) + conf_matrix_ci.round(2) ,")")
 
 print("\nCoefficient / Odds Ratio summary:")
 with pd.option_context('display.max_columns', None):
     print(coef_summary)
+#%% LRM Plotting
+### Plot ROC AUC for Logistic Regression ###
+
+# Common FPR grid for interpolation
+mean_fpr = np.linspace(0, 1, 100)
+interp_tprs = []
+
+# Interpolate all TPRs onto mean FPR grid
+for fpr, tpr in roc_curves:
+    interp_tpr = np.interp(mean_fpr, fpr, tpr)
+    interp_tpr[0] = 0.0
+    interp_tprs.append(interp_tpr)
+
+interp_tprs = np.array(interp_tprs)
+mean_tpr = np.mean(interp_tprs, axis=0)
+CI_tpr = conf_int(accuracies)  # Used for plotting 95% CI band width
+mean_tpr[-1] = 1.0
+
+# Confidence bounds
+tpr_upper = np.minimum(mean_tpr + CI_tpr, 1)
+tpr_lower = np.maximum(mean_tpr - CI_tpr, 0)
+
+# Mean AUC and CI
+mean_auc = np.mean(auc_scores)
+CI_auc = conf_int(auc_scores)
+lower_auc = mean_auc - CI_auc
+upper_auc = mean_auc + CI_auc
+
+auc_label = f"Mean ROC (AUC = {mean_auc:.3f} [{lower_auc:.3f}, {upper_auc:.3f}])"
+
+# Plot all ROC curves
+print(f"Number of individual ROC curves plotted: {len(roc_curves)}")
+for fpr, tpr in roc_curves:
+    plt.plot(fpr, tpr, alpha=0.1, color='gray')
+
+# Mean ROC
+plt.plot(mean_fpr, mean_tpr, color='blue', label=auc_label, linewidth=2)
+plt.fill_between(mean_fpr, tpr_lower, tpr_upper, color='blue', alpha=.3, label="95% Confidence Interval")
+plt.plot([0, 1], [0, 1], linestyle='--', color='black', linewidth=1)
+
+plt.title("Mean ROC Curve for Logistic Regression ± 95% CI", fontsize=14)
+plt.xlabel("False Positive Rate", fontsize=12)
+plt.ylabel("True Positive Rate", fontsize=12)
+plt.legend(loc="lower right", fontsize=10)
+plt.grid(True, linestyle='--', linewidth=0.5)
+plt.tight_layout()
+
+plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/LRM_roc_curve.svg", format='svg')
+plt.show()
+
+
+### Plot Mean Confusion Matrix ###
+
+# Create labels for mean ± 95CI
+labels = np.empty_like(mean_conf_matrix, dtype=object)
+for i in range(2):
+    for j in range(2):
+        mean_val = mean_conf_matrix[i, j]
+        ci_val = conf_matrix_ci[i, j]
+        labels[i, j] = f"{mean_val:.1f}\n({mean_val - ci_val:.1f}, {mean_val + ci_val:.1f})"
+
+fig, ax = plt.subplots(figsize=(6, 5))
+
+# Create grid
+x = np.arange(3)
+y = np.arange(3)
+
+# Plot confusion matrix
+c = ax.pcolormesh(x, y, mean_conf_matrix, cmap='Blues', shading='auto')
+fig.colorbar(c, ax=ax)
+
+# Add annotations
+for i in range(2):
+    for j in range(2):
+        ax.text(j + 0.5, i + 0.5, labels[i, j], ha='center', va='center', color='black', fontsize=12)
+
+# Axis formatting
+ax.set_xticks([0.5, 1.5])
+ax.set_yticks([0.5, 1.5])
+ax.set_xticklabels(['NOT STEM Major', 'STEM Major'])
+ax.set_yticklabels(['NOT STEM Major', 'STEM Major'], rotation=90)
+ax.set_xlabel("Predicted Label")
+ax.set_ylabel("True Label")
+ax.set_title("Mean Confusion Matrix (LRM Using Only Demographic Features)", fontsize=14)
+ax.grid(False)
+
+plt.tight_layout()
+plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/LRM_conf_matrix.svg", format='svg')
+plt.show()
+
 
 
 #%% Pre-Pruning Base Model
 
 X = XandY.copy()
-X = X.drop(columns=["final_major_t1_STEM"]) # Keep ID for now
+X = X.drop(columns=["final_major_t1_STEM", "ID"]) 
 
 y = XandY.copy()
 y = XandY["final_major_t1_STEM"]
@@ -428,7 +515,7 @@ ax.set_yticklabels(['NOT STEM Major', 'STEM Major'], rotation=90)
 
 ax.set_xlabel("Predicted Label")
 ax.set_ylabel("True Label")
-ax.set_title("Mean Confusion Matrix ± 95% CI (100×5 RFC, Pre-Pruning)", fontsize=14)
+ax.set_title("Mean Confusion Matrix (RFC using Full [Unpruned] Feature Set)", fontsize=14)
 
 # Clean look: turn off spines and grid
 ax.grid(False)
@@ -439,7 +526,6 @@ plt.tight_layout()
 
 # Save as SVG (should have no PNGs)
 plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/mean_confusion_matrix_pprune.svg", format='svg')
-
 plt.show()
 
 print("=== Model Performance Metrics (mean ± 95 CI) ===")
@@ -452,6 +538,31 @@ for metric, (m, CI) in metric_summary_ppRFC.items():
 
 importance_df = pd.DataFrame(feature_rows)
 
+importance_df = importance_df.rename(columns={
+    'negative_emotionality' : "Negative Emotionality/Neuroticism",'extraversion': "Extraversion", 'agreeableness': "Agreeableness",
+    'conscientiousness': "Conscientiousness", 'open_mindedness': "Open Mindedness", 'gender_F': "Is Female",
+    'race_MLT': "Is Multiracial",'race_CWH': "Is Caucasian/White", 'race_AFB': "Is Afrian American/Black",
+    'race_AAA': "Is Asian American", 'race_NAT': "Is Native American", 'race_HPI': "Is Hawaiian/Pacific Islander",
+    'race_OTH': "Is 'Other' Race", 'ethnicity_HS': "Is Hispanic", 'grade_importance': "SR Importance of Grades",
+    'PA_nondenseBaseline_overall': "Baseline nondense Positive Affect", 'NA_nondenseBaseline_overall': "Baseline nondense Negative Affect",
+    'studyTotal': "Total Number of People Studied with", 'term_GPA': "GPA Achieved GPA  Achieved during Semester of Study Participation",
+    'UM_credits_at_study': "Number of Credits Earned in UM at time of Study Participation", 'GAD_score': "GAD Score",
+    'PHQ_score': "PHQ Score", 'SHAPS_score':"SHAPS Score",'PTQ_score':"PTQ Score", 'EPSI_Tt_score':"EPSI Score", 'SIR_Tt_score':"SIR Score",
+    'PSWQ_score':"PSWQ Score", 'SIAS_score':"SIAS Score", 'OCIR_score':"OCIR Score", 'ASRM_score':"ASRM Score", 'PQB_score':"PQB Score",
+    'MSPSS_Tt_score':"MSPSS Score",'CSWS_Tt_score':"CSWS Score", 'semester_study':"Number of Semesters in UM at time of Study",
+    'Goal_grade_mean':"Mean Goal Grade", 'Goal_grade_sd':"Standard Deviation of Goal Grade",
+    'grade_100_mean':"Mean Grade", 'grade_100_sd':"Standard Deviation of Grades", 'grade_minus_goal_mean':"Mean Grade minus Goal",
+    'grade_minus_goal_sd':"Standard Deviation of Grade minus Goal", 'grade_minus_need_mean': "Mean Grade minus Need",
+    'grade_minus_need_sd':"Standard Deviation of Grade minus Need", 'NA_dense_mean':"Mean Dense Period Negative Affect",
+    'NA_dense_sd':"Standard Deviation of Dense Period Negative Affect", 'need_grade_mean':"Mean Needed Grade",
+    'need_grade_sd':"Standard Deviation of Needed Grade",'negative_mood_mean':"Mean Nondense Period Negative Affect",
+    'negative_mood_sd':"Standard Deviation of Nondense Period Negative Affect", 'PA_dense_mean':"Mean Dense Period Positive Affect",
+    'PA_dense_sd':"Standard Deviation of Dense Period Positive Affect", 'PE_mean':"Mean Prediction Error", 'PE_sd':"Standard Deviation of Prediction Error",
+    'positive_mood_mean':"Mean Nondense Period Positive Affect",'positive_mood_sd':"Standard Deviation of Nondense Period Positive Affect",
+    'pred_100_mean':"Mean Predicted Grade", 'pred_100_sd':"Standard Deviation of Predicted Grade",
+    'Prediction_confidence_mean':"Mean Prediction Confidence", 'Prediction_confidence_sd':"Standard Deviation of Prediction Confidence",
+    'studyTotal_mean':"Mean Number of People Studied with", 'studyTotal_sd':"Standard Deviation of Number of People Studied with"})
+
 mean_importance = importance_df.mean(skipna=True)
 std_importance = importance_df.std(skipna=True)
 
@@ -461,7 +572,7 @@ std_importance = std_importance[mean_importance.index]
 
 
 # Set up figure and axis
-fig, ax = plt.subplots(figsize=(12, 6))
+fig, ax = plt.subplots(figsize=(18, 9))
 
 # Bar plot with error bars
 mean_importance.plot.bar(
@@ -472,7 +583,7 @@ mean_importance.plot.bar(
     ax=ax
 )
 # Labels and title
-ax.set_title("Mean Feature Importance of Pre-Pruned Feature Set", fontsize=14)
+ax.set_title("Mean Feature Importance of Features from RFC trained on Full (Unpruned) Feature Set", fontsize=14)
 ax.set_ylabel("Mean Permutation Importance", fontsize=12)
 ax.set_xticklabels(mean_importance.index, rotation=45, ha='right', fontsize=10)
 ax.tick_params(axis='y', labelsize=10)
@@ -794,7 +905,7 @@ ax.set_yticklabels(['NOT STEM Major', 'STEM Major'], rotation=90)
 
 ax.set_xlabel("Predicted Label")
 ax.set_ylabel("True Label")
-ax.set_title("Mean Confusion Matrix ± 95% CI (100×5 RFC, Pre-Pruning)", fontsize=14)
+ax.set_title("Mean Confusion Matrix (RFC using Pruned Feature Set)", fontsize=14)
 
 # Clean look: turn off spines and grid
 ax.grid(False)
@@ -857,16 +968,16 @@ plt.show()
 
 #%% Calculate and Print Gain
 
-print("\nRelative to the LR model, the Unpruned RFC had an improved ROC_AUC of",
-      per_gain(metric_summary_ppRFC["ROC AUC"][0], metric_summary_LR["ROC AUC"][0]), "and an improved accuracy of",
+print("\nRelative to the LR model, the Unpruned RFC had improved ROC_AUC by",
+      per_gain(metric_summary_ppRFC["ROC AUC"][0], metric_summary_LR["ROC AUC"][0]), "and improved accuracy by",
       per_gain(metric_summary_ppRFC["Accuracy"][0], metric_summary_LR["Accuracy"][0]))
 
-print("\nRelative to the LR model, the Pruned RFC had an improved ROC_AUC of",
-      per_gain(metric_summary_pRFC["ROC AUC"][0], metric_summary_LR["ROC AUC"][0]), "and an improved accuracy of",
+print("\nRelative to the LR model, the Pruned RFC had improved ROC_AUC by",
+      per_gain(metric_summary_pRFC["ROC AUC"][0], metric_summary_LR["ROC AUC"][0]), "and improved accuracy by",
       per_gain(metric_summary_pRFC["Accuracy"][0], metric_summary_LR["Accuracy"][0]))
 
-print("\nRelative to the Unpruned RFC, the Pruned RFC had an improved ROC_AUC of",
-      per_gain(metric_summary_pRFC["ROC AUC"][0], metric_summary_ppRFC["ROC AUC"][0]), "and an improved accuracy of",
+print("\nRelative to the Unpruned RFC, the Pruned RFC had improved ROC_AUC by",
+      per_gain(metric_summary_pRFC["ROC AUC"][0], metric_summary_ppRFC["ROC AUC"][0]), "and improved accuracy by",
       per_gain(metric_summary_pRFC["Accuracy"][0], metric_summary_ppRFC["Accuracy"][0]))
 
 
