@@ -158,7 +158,7 @@ plot_data_pq <- mini_comp_stats |>
       variable == "grade_100_mean" ~ "Mean Grade",
       variable == "grade_minus_goal_mean" ~ "Mean Grade minus Goal",
       variable == "NA_dense_mean" ~ "Mean Dense Period Negative Affect",
-      variable == "pred_100_mean" ~ "Mean Prediction Error",
+      variable == "pred_100_mean" ~ "Mean Predicted Grade",
     ),
     significance = if_else(pval < 0.05, if_else(pval < 0.01, if_else(pval < 0.001, "SIG001", "SIG01"), "SIG05"), "NSIG"),
     variable = fct_reorder(variable, pval, .fun = min)
@@ -168,6 +168,8 @@ hr_labels <- plot_data_pq |>
   filter(method == "Raw P") |>
   distinct(variable, hazard_ratio)
 
+
+#####Multiple Comparisons Corrected P-values Plot#####
 ggplot(plot_data_pq, aes(x = pval, y = variable)) +
   geom_point(
     aes(shape = method, color = significance),
@@ -212,4 +214,189 @@ ggplot(plot_data_pq, aes(x = pval, y = variable)) +
     axis.text.y = element_text(size = 14),
     axis.title.x = element_text(size = 17)
   )
+
+#####Survival Surfaces#####
+#This code will create the object and then plot it but calling the object. All of the graphs in the paper can be found below.
+
+##Interactive 3D surface for mean_GMG
+
+#Load the relevant statistics
+cox_model <- coxph(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ grade_minus_goal_mean, data = sobreviver_comp,  x = TRUE)
+summary_obj <- summary(cox_model)
+p_val <- summary_obj$coefficients[, "Pr(>|z|)"]
+HR <- summary_obj$coefficients[, "exp(coef)"]
+bon <- p.adjust(p_val, method = "bonferroni", n = 10)
+
+
+#Set up the plot call
+plot_GMG <-  plot_surv_3Dsurface(time = "semester_drop",
+                                 status = "tier1_STEM_drop_tozero",
+                                 variable = "grade_minus_goal_mean",
+                                 data = sobreviver_comp,
+                                 model = cox_model,
+                                 interactive=T,
+                                 max_t = 10,
+                                 zlab = "Mean Grade Minus Goal",
+                                 xlab = "Time (Semesters)",
+                                 ylab = 'Probability of STEM Persistence')
+
+#add a title
+plot_GMG <- plot_GMG |> layout(
+  title = list(
+    text = paste0(
+      "STEM Persistence Probability over Time as a Function of the Mean Grade minus Goal",
+      #"<br><sub>",
+      #"Cox Model q = ", formatC(bon, format = "f", digits = 10),
+      #" | Cox HR = ", sprintf("%.5f", HR),
+      "</sub>"
+    ),
+    x = 0.5,
+    y= 0.9,
+    xanchor = "center"
+  )
+)
+
+#Plot in Rstudio viewer. Now, you're going to have to manually move the view to find the best view, and then save as png, unfortunately, saving as svg
+#Is not exactly available
+plot_GMG
+
+##Interactive 3D surface for NA_dense_mean
+cox_model <- coxph(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ NA_dense_mean, data = sobreviver_comp,  x = TRUE)
+summary_obj <- summary(cox_model)
+p_val <- summary_obj$coefficients[, "Pr(>|z|)"]
+HR <- summary_obj$coefficients[, "exp(coef)"]
+bon <- p.adjust(p_val, method = "bonferroni", n = 10)
+
+plot_dNA <-  plot_surv_3Dsurface(time = "semester_drop",
+                                 status = "tier1_STEM_drop_tozero",
+                                 variable = "NA_dense_mean",
+                                 data = sobreviver_comp,
+                                 model = cox_model,
+                                 interactive=T,
+                                 max_t = 10,
+                                 zlab = "Mean Dense Period Negative Affect",
+                                 xlab = "Time (Semesters)",
+                                 ylab = 'Probability of STEM Persistence')
+
+plot_dNA <- plot_dNA |> layout(
+  title = list(
+    text = paste0(
+      "STEM Persistence Probability over Time as a Function of the Mean Dense Period Negative Affect", 
+      # "<br><sub>",
+      # "Cox Model q = ", formatC(bon, format = "f", digits = 10),
+      # " | Cox HR = ", sprintf("%.5f", HR),
+      "</sub>"
+    ),
+    x = 0.5,
+    y= 0.9,
+    xanchor = "center"
+  )
+)
+
+plot_dNA
+
+##Interactive 3D surface for mean PE
+cox_model <- coxph(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ pred_100_mean, data = sobreviver_comp,  x = TRUE)
+summary_obj <- summary(cox_model)
+p_val <- summary_obj$coefficients[, "Pr(>|z|)"]
+HR <- summary_obj$coefficients[, "exp(coef)"]
+bon <- p.adjust(p_val, method = "bonferroni", n = 10)
+
+plot_PE <-  plot_surv_3Dsurface(time = "semester_drop",
+                                 status = "tier1_STEM_drop_tozero",
+                                 variable = "pred_100_mean",
+                                 data = sobreviver_comp,
+                                 model = cox_model,
+                                 interactive=T,
+                                 max_t = 10,
+                                 zlab = "Mean Predicted Grade",
+                                 xlab = "Time (Semesters)",
+                                 ylab = 'Probability of STEM Persistence')
+
+plot_PE <- plot_PE |> layout(
+  title = list(
+    text = paste0(
+      "STEM Persistence Probability over Time as a Function of the Mean Predicted Grade", 
+      # "<br><sub>",
+      # "Cox Model q = ", formatC(bon, format = "f", digits = 10),
+      # " | Cox HR = ", sprintf("%.5f", HR),
+      "</sub>"
+    ),
+    x = 0.5,
+    y= 0.9,
+    xanchor = "center"
+  )
+)
+
+plot_PE
+
+##Interactive 3D surface for mean Grade
+cox_model <- coxph(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ grade_100_mean, data = sobreviver_comp,  x = TRUE)
+summary_obj <- summary(cox_model)
+p_val <- summary_obj$coefficients[, "Pr(>|z|)"]
+HR <- summary_obj$coefficients[, "exp(coef)"]
+bon <- p.adjust(p_val, method = "bonferroni", n = 10)
+
+plot_grd <-  plot_surv_3Dsurface(time = "semester_drop",
+                                status = "tier1_STEM_drop_tozero",
+                                variable = "grade_100_mean",
+                                data = sobreviver_comp,
+                                model = cox_model,
+                                interactive=T,
+                                max_t = 10,
+                                zlab = "Mean Grade",
+                                xlab = "Time (Semesters)",
+                                ylab = 'Probability of STEM Persistence')
+
+plot_grd <- plot_grd |> layout(
+  title = list(
+    text = paste0(
+      "STEM Persistence Probability over Time as a Function of the Mean Grade", 
+      # "<br><sub>",
+      # "Cox Model q = ", formatC(bon, format = "f", digits = 10),
+      # " | Cox HR = ", sprintf("%.5f", HR),
+      "</sub>"
+    ),
+    x = 0.5,
+    y= 0.9,
+    xanchor = "center"
+  )
+)
+
+plot_grd
+
+##Interactive 3D surface for term_GPA
+cox_model <- coxph(Surv(time = semester_drop, event = tier1_STEM_drop_tozero) ~ term_GPA, data = sobreviver_comp,  x = TRUE)
+summary_obj <- summary(cox_model)
+p_val <- summary_obj$coefficients[, "Pr(>|z|)"]
+HR <- summary_obj$coefficients[, "exp(coef)"]
+bon <- p.adjust(p_val, method = "bonferroni", n = 10)
+
+plot_tGPA <-  plot_surv_3Dsurface(time = "semester_drop",
+                                 status = "tier1_STEM_drop_tozero",
+                                 variable = "term_GPA",
+                                 data = sobreviver_comp,
+                                 model = cox_model,
+                                 interactive=T,
+                                 max_t = 10,
+                                 zlab = "Mean GPA Achieved during Semester of Study Participation",
+                                 xlab = "Time (Semesters)",
+                                 ylab = 'Probability of STEM Persistence')
+
+plot_tGPA <- plot_tGPA |> layout(
+  title = list(
+    text = paste0(
+      "STEM Persistence Probability over Time as a Function of the Mean GPA Achieved during Semester of Study Participation", 
+      # "<br><sub>",
+      # "Cox Model q = ", formatC(bon, format = "f", digits = 10),
+      # " | Cox HR = ", sprintf("%.5f", HR),
+      "</sub>"
+    ),
+    x = 0.5,
+    y= 0.9,
+    xanchor = "center"
+  )
+)
+
+plot_tGPA
 
