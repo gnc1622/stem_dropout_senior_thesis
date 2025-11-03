@@ -1627,3 +1627,17 @@ g.ax_heatmap.legend(
 # plt.savefig("//datastore01.psy.miami.edu/Groups/AHeller_Lab/Undergrad/ANavarro/ST/Plots/Pub_figs/correlation_heatmap2.svg", format="svg", bbox_inches="tight", transparent=True)
 
 plt.show()
+
+#%%
+#Get the correaltion between the two outcome variables
+corrXY = XandY.corr()
+print(corrXY.loc["tier1_STEM_drop_tozero","final_major_t1_STEM"])
+
+#%%
+#Get the correlation of the specific variables of interset
+current_features = ['extraversion', 'open_mindedness', 'term_GPA', 'UM_credits_at_study', 'semester_study', 'Goal_grade_sd', 'grade_100_mean', 'grade_minus_goal_mean', 'NA_dense_mean', 'pred_100_mean']
+X = XandY.copy()
+X = X[current_features]
+
+corrX = X.corr()
+print(corrX) # This is table S3
