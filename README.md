@@ -1,19 +1,14 @@
 # stem_dropout
 STEM Dropout Code availability
 
-In here will be all files related to |WRITE UP NAME|. A portion of the work was done in R and a portion was done in Python:
+In here will be all files related to AN's undergraduate senior thesis work, "Using Machine Learning and Survival Analyses to Predict Undergraduate STEM Dropout." A portion of the work was done in R and a portion was done in Python:
 
-Edits are made to figures in illustrator. The purpose of these edits is to make sure that axes are legible and accessible to all.
+Edits are made to figures in illustrator. The purpose of these edits is to make sure that figures are legible and accessible to all, no data has been edited post production from the code in this repository.
 
 Python:
   Machine Learning
-  Reinforcment Learning
-  Pre-processing Related to long -> wide format*
+  Correlations
 
 R:
   Survival Analyses
-  Linear Models
-  Pre-processing from earliest stage*
-
-*Not sure if those will be included in the final git respository.
   
